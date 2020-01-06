@@ -1,0 +1,51 @@
+---
+# tasks file for ansible-role-corkscrew
+
+- include_tasks: "{{ ansible_os_family }}.yml"
+
+- name: Getting latest corkscrew version
+  shell: git ls-remote --tags https://github.com/bryanpkc/corkscrew.git | sed 's/.*\///' | egrep "^v[0-9]*(\.[0-9]*)$" | sed 's/v//' | sort | tail -n1
+  register: corkscrew_git
+  changed_when: false
+
+- name: Removing any corkscrew package
+  become: yes
+  package:
+    name: corkscrew
+    state: absent
+
+- name: Checking if corkscrew is installed
+  stat:
+    path: "{{ prefix }}/bin/corkscrew"
+  register: corkscrew_installed
+
+- name: Getting current corkscrew version
+  shell: corkscrew | grep -o "^corkscrew [0-9]*\.[0-9]*" | sed 's/corkscrew //'
+  when: corkscrew_installed.stat.exists
+  register: corkscrew_local
+  changed_when: false
+
+- name: Set forced version
+  set_fact:
+    corkscrew_git_version: "{{ corkscrew_install_version }}"
+  when: corkscrew_force_install | bool
+
+- name: Set latest corkscrew version
+  set_fact:
+    corkscrew_git_version: "{{ corkscrew_git.stdout }}"
+  when: not corkscrew_force_install
+
+- name: Set local corkscrew version
+  set_fact:
+    corkscrew_local_version: "{{ corkscrew_local.stdout }}"
+  when: corkscrew_installed.stat.exists
+
+- include_tasks: uninstall.yml
+  when: 
+    - corkscrew_installed.stat.exists 
+    - (corkscrew_git_version != corkscrew_local_version) or corkscrew_force_install
+
+- include_tasks: install.yml
+  when: not corkscrew_installed.stat.exists or 
+        corkscrew_force_install or 
+        (corkscrew_git_version != corkscrew_local_version)
